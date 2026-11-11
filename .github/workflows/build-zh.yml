@@ -94,6 +94,125 @@ jobs:
                 "com.paperlessnative.mobile.zh")
           PY
 
+      - name: Add API key login to the app
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, json
+
+          def patch(path, old, new, marker):
+              p = pathlib.Path(path)
+              s = p.read_text(encoding="utf-8")
+              if marker in s:
+                  print("already patched:", path, "->", marker)
+                  return
+              if s.count(old) != 1:
+                  sys.exit("PATCH FAILED: " + path + ": expected exactly 1 match, got " + str(s.count(old)) + ": " + old)
+              p.write_text(s.replace(old, new, 1), encoding="utf-8")
+              print("patched:", path, "->", marker)
+
+          L = "src/features/auth/LoginScreen.tsx"
+
+          patch(L, "import * as Clipboard from 'expo-clipboard';\n",
+                   "import axios from 'axios';\nimport * as Clipboard from 'expo-clipboard';\n",
+                   "import axios from 'axios';")
+
+          patch(L, "  const [showPassword, setShowPassword] = useState(false);\n",
+                   "  const [showPassword, setShowPassword] = useState(false);\n"
+                   "  const [apiKey, setApiKey] = useState('');\n"
+                   "  const [showApiKey, setShowApiKey] = useState(false);\n",
+                   "const [apiKey, setApiKey]")
+
+          patch(L, "    if (!url || !username || !password) return;\n",
+                   "    const useApiKey = apiKey.trim().length > 0;\n"
+                   "    if (!url || (!useApiKey && (!username || !password))) return;\n",
+                   "const useApiKey")
+
+          patch(L, "      const response = await authApi.login(username, password, mfaRequired ? mfaCode : undefined);\n",
+                   "      let response: { token: string };\n"
+                   "      let loginName = username;\n"
+                   "      if (useApiKey) {\n"
+                   "        const keyToken = apiKey.trim();\n"
+                   "        const me = await axios.get(`${cleanUrl}/api/ui_settings/`, {\n"
+                   "          headers: {\n"
+                   "            Authorization: `Token ${keyToken}`,\n"
+                   "            Accept: 'application/json; version=9',\n"
+                   "          },\n"
+                   "          timeout: 30000,\n"
+                   "        });\n"
+                   "        loginName = me.data?.user?.username || '';\n"
+                   "        response = { token: keyToken };\n"
+                   "      } else {\n"
+                   "        response = await authApi.login(username, password, mfaRequired ? mfaCode : undefined);\n"
+                   "      }\n",
+                   "let loginName")
+
+          patch(L, "      await setStoredUsername(username);\n",
+                   "      await setStoredUsername(loginName);\n",
+                   "setStoredUsername(loginName)")
+
+          patch(L, "params: { username } });",
+                   "params: { username: loginName } });",
+                   "params: { username: loginName }")
+
+          patch(L, "list.results?.find((u) => u.username === username) || null;",
+                   "list.results?.find((u) => u.username === loginName) || null;",
+                   "u.username === loginName")
+
+          patch(L, "          {mfaRequired ? (\n            <Animated.View",
+                   "          <View style={styles.mfaDivider}>\n"
+                   "            <View style={[styles.mfaDividerLine, { backgroundColor: theme.colors.outlineVariant }]} />\n"
+                   "            <Text variant=\"bodySmall\" style={{ color: theme.colors.onSurfaceVariant }}>\n"
+                   "              {t('auth.or')}\n"
+                   "            </Text>\n"
+                   "            <View style={[styles.mfaDividerLine, { backgroundColor: theme.colors.outlineVariant }]} />\n"
+                   "          </View>\n\n"
+                   "          <TextInput\n"
+                   "            label={t('auth.apiKey')}\n"
+                   "            value={apiKey}\n"
+                   "            onChangeText={setApiKey}\n"
+                   "            mode=\"outlined\"\n"
+                   "            autoCapitalize=\"none\"\n"
+                   "            autoCorrect={false}\n"
+                   "            secureTextEntry={!showApiKey}\n"
+                   "            left={<TextInput.Icon icon=\"key\" />}\n"
+                   "            right={\n"
+                   "              <TextInput.Icon\n"
+                   "                icon={showApiKey ? 'eye-off' : 'eye'}\n"
+                   "                onPress={() => setShowApiKey(!showApiKey)}\n"
+                   "              />\n"
+                   "            }\n"
+                   "            style={styles.input}\n"
+                   "          />\n\n"
+                   "          {mfaRequired ? (\n            <Animated.View",
+                   "t('auth.apiKey')")
+
+          patch(L, "              loading || !url || !username || !password || (mfaRequired && mfaCode.length !== 6)\n",
+                   "              loading ||\n"
+                   "              !url ||\n"
+                   "              (apiKey.trim().length === 0 && (!username || !password)) ||\n"
+                   "              (mfaRequired && mfaCode.length !== 6)\n",
+                   "apiKey.trim().length === 0 &&")
+
+          TEXT = {
+            "en": ("API Key", "OR"),
+            "de": ("API-Schlüssel", "ODER"),
+            "zh": ("API 密钥", "或"),
+          }
+          for lang, (k, o) in TEXT.items():
+              path = f"src/i18n/locales/{lang}.json"
+              p = pathlib.Path(path)
+              s = p.read_text(encoding="utf-8")
+              if '"apiKey"' in s:
+                  print("already patched:", path); continue
+              anchor = '    "mfaCode":'
+              if s.count(anchor) != 1:
+                  sys.exit("PATCH FAILED: " + path + ": mfaCode anchor count " + str(s.count(anchor)))
+              s = s.replace(anchor, f'    "apiKey": "{k}",\n    "or": "{o}",\n' + anchor, 1)
+              json.loads(s)
+              p.write_text(s, encoding="utf-8")
+              print("patched:", path)
+          PY
+
       - name: Install dependencies
         run: npm ci
 
